@@ -3,7 +3,7 @@ bl_info = {
     "name": "Export to Miproject",
     "author": "Roni Raihan - TRPHB Animation",
     "version": (0, 1),
-    "blender": (2, 80, 0),
+    "blender": (5, 0, 1),
     "location": "File -> Export -> Miproject",
     "description": "Export Mesh to Miproject",
     "warning": "",
@@ -168,7 +168,7 @@ def atur_object_persiapan(context, sobj):
     bpy.ops.object.select_all(action='DESELECT')
     for o in sobj:
         obj = bpy.data.objects.get(o["name"])
-        if obj.type in ('MESH', 'EMPTY', 'CURVE', 'SURFACE', 'META', 'CURVES', 'GREASEPENCIL'
+        if obj.type in ('MESH', 'EMPTY', 'CURVE', 'SURFACE', 'META', 'CURVES', 'GREASEPENCIL',
                         'LATTICE', 'ARMATURE'):
             obj.select_set(True)
             context.view_layer.objects.active = obj
