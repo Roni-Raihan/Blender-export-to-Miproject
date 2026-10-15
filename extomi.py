@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Export to Miproject",
     "author": "Roni Raihan - TRPHB Animation",
-    "version": (0, 2),
+    "version": (0, 3),
     "blender": (5, 0, 1),
     "location": "File -> Export -> Miproject",
     "description": "Export Mesh to Miproject",
@@ -86,6 +86,7 @@ class extomi_jalan():
         self.exp_fold = None
         self.bt_name = None
         self.mip_name = None
+        self.tex_eror = []
     
     def atur_folder(self, base_fpath):
         #bersihin jalur
@@ -213,13 +214,22 @@ class extomi_jalan():
             return fname
         
         def export_tex(tex_name):
-            img = bpy.data.images.get(tex_name)
-            name = f"{aman_nama(tex_name)}_{acak_nama(jum=15)}"
-            fname = f"{name}.png"
-            fpath = os.path.join(self.exp_fold, fname)
-            img.save(filepath=fpath, save_copy=True)
+            try:
+                img = bpy.data.images.get(tex_name)
+                name = f"{aman_nama(tex_name)}_{acak_nama(jum=15)}"
+                fname = f"{name}.png"
+                fpath = os.path.join(self.exp_fold, fname)
+                img.save(filepath=fpath, save_copy=True)
+                
+                print("Texture successfully exported:")
+                print(f"{tex_name} | {fname}")
+                return fname
             
-            return fname
+            except Exception as e:
+                self.tex_eror.append(tex_name)
+                print(f"Cannot export: {tex_name}")
+                print(e)
+                return None
         
         def cari_texture(mat):
             if mat.use_nodes:
@@ -238,7 +248,7 @@ class extomi_jalan():
                                         if os.path.exists(imgfpath): #cek gambarnya apakah ada
                                             return node.image.name
                                         else:
-                                            print(f"mising {imgfpath}")
+                                            print(f"Mising {imgfpath}")
                                     
                             elif img.source == 'GENERATED':
                                 return node.image.name
@@ -256,9 +266,10 @@ class extomi_jalan():
             if mat["tex"] in ada_tex:
                 continue
             file_tex = export_tex(mat["tex"])
-            self.ex_tex.append({"name": mat["tex"],
-                                "file": file_tex
-                                })
+            if file_tex:
+                self.ex_tex.append({"name": mat["tex"],
+                                    "file": file_tex
+                                    })
             ada_tex.append(mat["tex"])
                 
         for o in self.ex_obj:
@@ -397,7 +408,7 @@ class extomi_jalan():
         print(f"{vertex_count // 3} triangles — {fpath}")
         return f"{o['save_name']}{o['UID']}.schematic"
     
-    def export_meshcache_dengan_numpy(self, o, apply_mod = False):
+    def export_meshcache_dengan_numpy(self, o, apply_mod = False, normal_mode = 'SMOOTH'):
         #self.ex_obj#--------------
         #"name": obj.name,
         #"type": obj.type,
@@ -487,6 +498,7 @@ class extomi_jalan():
         tri_verts = np.empty(tri_count * 3, dtype=np.int32)
         mesh.loop_triangles.foreach_get("vertices", tri_verts)
         tri_verts = tri_verts.reshape(-1, 3)  # (tri_count, 3)
+            
         
         # uv
         has_uv = mesh.uv_layers.active is not None
@@ -494,6 +506,21 @@ class extomi_jalan():
             uv_data = np.empty(len(mesh.loops) * 2, dtype=np.float32)
             mesh.uv_layers.active.data.foreach_get("uv", uv_data)
             uv_data = uv_data.reshape(-1, 2)  # (loop_count, 2)
+            
+            
+        # --- Normal sesuai mode (dibaca sebelum winding di-reorder) ---
+        if normal_mode == 'FLAT':
+            tri_nor = np.empty(tri_count * 3, dtype=np.float32)
+            mesh.loop_triangles.foreach_get("normal", tri_nor)
+            tri_nor = tri_nor.reshape(-1, 3)  # (tri_count, 3)
+        elif normal_mode == 'AUTO':
+            cn = np.empty(len(mesh.loops) * 3, dtype=np.float32)
+            mesh.corner_normals.foreach_get("vector", cn)
+            cn = cn.reshape(-1, 3)  # (loop_count, 3)
+        else:  # 'SMOOTH'
+            vnor = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
+            mesh.vertices.foreach_get("normal", vnor)
+            vnor = vnor.reshape(-1, 3)  # (vertex_count_mesh, 3)
             
         # --- Reorder winding [0, 2, 1] ---
         order = np.array([0, 2, 1])
@@ -522,7 +549,12 @@ class extomi_jalan():
         mz = coords_rel[:, 2] * 16.0
     
         # --- Transformasi normal ---
-        normals = vnor[vert_idx]  # (vertex_count, 3)
+        if normal_mode == 'FLAT':
+            normals = np.repeat(tri_nor, 3, axis=0)   # 1 normal face -> 3 vertex
+        elif normal_mode == 'AUTO':
+            normals = cn[loop_idx]                    # (vertex_count, 3)
+        else:  # 'SMOOTH'
+            normals = vnor[vert_idx]                  # (vertex_count, 3)
         normals_world = normals @ nmat
     
         nx = ((normals_world[:, 0] + 1.0) * 0.5 * 255).astype(np.uint32) & 0xFF
@@ -597,7 +629,7 @@ class extomi_jalan():
         
         data = {
             "format": 34,
-            "created_in": "Exporter to Miproject",
+            "created_in": "Exporter to Miproject by TRPHB Animation Add-on",
             "project": {
                 "name": self.mip_name,
                 "author": aturan["author"],
@@ -750,6 +782,17 @@ class ExportMiproj(Operator, ExportHelper):
         default=True,
     )
     
+    shade_mode: EnumProperty(
+        name="Shading",
+        description="Shading for mesh and shadows",
+        items=[
+            ('AUTO', "Auto", "Use own shading: flat/smooth, sharp edges, custom normals"),
+            ('FLAT', "Flat", "Every face is shaded independently"),
+            ('SMOOTH', "Smooth", "Average normals per vertex (old behavior)")
+        ],
+        default='AUTO',
+    )
+    
     bt_color: FloatVectorProperty(
         name="Base Texture Color",
         description="Color for Generated Base Texture",
@@ -768,7 +811,7 @@ class ExportMiproj(Operator, ExportHelper):
     desk: StringProperty(
         name='Description', 
         description='Description miproject', 
-        default=''
+        default='Exporter to Miproject by TRPHB Animation Add-on'
     )
     
     def execute(self, context):
@@ -797,13 +840,18 @@ class ExportMiproj(Operator, ExportHelper):
         exporter.export_atur_texture(self.bt_color)#export texture
         for o in exporter.ex_obj:
             if o["type"] == 'MESH':#export meshcache
-                o["meshcache_file"] = exporter.export_meshcache_dengan_numpy(o, self.apply_mod) #exporter.export_meshcache(o, self.apply_mod)
+                o["meshcache_file"] = exporter.export_meshcache_dengan_numpy(o, self.apply_mod, self.shade_mode) #exporter.export_meshcache(o, self.apply_mod)
                 
         #Generate Miproject
         exporter.generate_mip(aturan)
         
+        
+        if len(exporter.tex_eror) > 0:
+            et = ", ".join(exporter.tex_eror)
+            self.report({'WARNING'}, f"Scene Was Exported Successfully, But Some Textures Could Not Be Exported: {et}")
+        else:
+            self.report({'INFO'}, "Successful Export")
         print("Done")
-        self.report({'INFO'}, "Successful Export")
         return {'FINISHED'}
 
     def draw(self, context):
@@ -819,6 +867,7 @@ class ExportMiproj(Operator, ExportHelper):
         
         col = layout.column()
         col.label(text="Mesh")
+        col.prop(self, "shade_mode")
         col.prop(self, "apply_mod")
         col.prop(self, "backfaces")
         
