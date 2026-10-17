@@ -378,6 +378,13 @@ class extomi_jalan():
                 
                 # normal
                 nx, ny, nz = normal_matrix @ v.normal
+                
+                # --- FLIP LEFT/RIGHT FACE NORMALS ONLY ---
+                # Left/right faces have normals primarily along the X axis.
+                # Keep the normals for top/bottom and front/back faces unchanged.
+                if abs(nx) >= abs(ny) and abs(nx) >= abs(nz):
+                    nx, ny, nz = -nx, -ny, -nz
+                
                 nbx = int(round(((nx + 1.0) * 0.5) * 255)) & 0xFF
                 nby = int(round(((ny + 1.0) * 0.5) * 255)) & 0xFF
                 nbz = int(round(((nz + 1.0) * 0.5) * 255)) & 0xFF
@@ -556,6 +563,15 @@ class extomi_jalan():
         else:  # 'SMOOTH'
             normals = vnor[vert_idx]                  # (vertex_count, 3)
         normals_world = normals @ nmat
+        
+        # --- FLIP LEFT/RIGHT FACE NORMALS ONLY ---
+        # Left/right faces have normals primarily along the X axis.
+        # Keep the normals for top/bottom and front/back faces unchanged.
+        left_right_mask = (
+            (np.abs(normals_world[:, 0]) >= np.abs(normals_world[:, 1])) &
+            (np.abs(normals_world[:, 0]) >= np.abs(normals_world[:, 2]))
+        )
+        normals_world[left_right_mask] *= -1.0
     
         nx = ((normals_world[:, 0] + 1.0) * 0.5 * 255).astype(np.uint32) & 0xFF
         ny = ((normals_world[:, 1] + 1.0) * 0.5 * 255).astype(np.uint32) & 0xFF
