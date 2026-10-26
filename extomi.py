@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Export to Miproject",
     "author": "Roni Raihan - TRPHB Animation",
-    "version": (0, 3),
+    "version": (0, 4),
     "blender": (5, 0, 1),
     "location": "File -> Export -> Miproject",
     "description": "Export Mesh to Miproject",
@@ -378,13 +378,6 @@ class extomi_jalan():
                 
                 # normal
                 nx, ny, nz = normal_matrix @ v.normal
-                
-                # --- FLIP LEFT/RIGHT FACE NORMALS ONLY ---
-                # Left/right faces have normals primarily along the X axis.
-                # Keep the normals for top/bottom and front/back faces unchanged.
-                if abs(nx) >= abs(ny) and abs(nx) >= abs(nz):
-                    nx, ny, nz = -nx, -ny, -nz
-                
                 nbx = int(round(((nx + 1.0) * 0.5) * 255)) & 0xFF
                 nby = int(round(((ny + 1.0) * 0.5) * 255)) & 0xFF
                 nbz = int(round(((nz + 1.0) * 0.5) * 255)) & 0xFF
@@ -415,7 +408,7 @@ class extomi_jalan():
         print(f"{vertex_count // 3} triangles — {fpath}")
         return f"{o['save_name']}{o['UID']}.schematic"
     
-    def export_meshcache_dengan_numpy(self, o, apply_mod = False, normal_mode = 'SMOOTH'):
+    def export_meshcache_dengan_numpy(self, o, apply_mod = False, normal_mode = 'SMOOTH', flip_x_normals = False):
         #self.ex_obj#--------------
         #"name": obj.name,
         #"type": obj.type,
@@ -491,11 +484,6 @@ class extomi_jalan():
         vco = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
         mesh.vertices.foreach_get("co", vco)
         vco = vco.reshape(-1, 3)
-        
-        # normal semua vertex
-        vnor = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
-        mesh.vertices.foreach_get("normal", vnor)
-        vnor = vnor.reshape(-1, 3)
     
         # loop triangle — vertex index dan loop index
         tri_loops = np.empty(tri_count * 3, dtype=np.int32)
@@ -564,14 +552,15 @@ class extomi_jalan():
             normals = vnor[vert_idx]                  # (vertex_count, 3)
         normals_world = normals @ nmat
         
-        # --- FLIP LEFT/RIGHT FACE NORMALS ONLY ---
+        # --- FLIP LEFT/RIGHT FACE NORMALS ONLY --- # Thanks to ForestWolf99
         # Left/right faces have normals primarily along the X axis.
         # Keep the normals for top/bottom and front/back faces unchanged.
-        left_right_mask = (
-            (np.abs(normals_world[:, 0]) >= np.abs(normals_world[:, 1])) &
-            (np.abs(normals_world[:, 0]) >= np.abs(normals_world[:, 2]))
-        )
-        normals_world[left_right_mask] *= -1.0
+        if flip_x_normals:
+            left_right_mask = (
+                (np.abs(normals_world[:, 0]) >= np.abs(normals_world[:, 1])) &
+                (np.abs(normals_world[:, 0]) >= np.abs(normals_world[:, 2]))
+            )
+            normals_world[left_right_mask] *= -1.0
     
         nx = ((normals_world[:, 0] + 1.0) * 0.5 * 255).astype(np.uint32) & 0xFF
         ny = ((normals_world[:, 1] + 1.0) * 0.5 * 255).astype(np.uint32) & 0xFF
@@ -809,6 +798,12 @@ class ExportMiproj(Operator, ExportHelper):
         default='AUTO',
     )
     
+    flip_x_normals: BoolProperty(
+        name="Flip X Axis Normals",
+        description="This is required for some variations of Mine-imator",
+        default=True,
+    )
+    
     bt_color: FloatVectorProperty(
         name="Base Texture Color",
         description="Color for Generated Base Texture",
@@ -827,7 +822,7 @@ class ExportMiproj(Operator, ExportHelper):
     desk: StringProperty(
         name='Description', 
         description='Description miproject', 
-        default='Exporter to Miproject by TRPHB Animation Add-on'
+        default=''
     )
     
     def execute(self, context):
@@ -856,7 +851,7 @@ class ExportMiproj(Operator, ExportHelper):
         exporter.export_atur_texture(self.bt_color)#export texture
         for o in exporter.ex_obj:
             if o["type"] == 'MESH':#export meshcache
-                o["meshcache_file"] = exporter.export_meshcache_dengan_numpy(o, self.apply_mod, self.shade_mode) #exporter.export_meshcache(o, self.apply_mod)
+                o["meshcache_file"] = exporter.export_meshcache_dengan_numpy(o, self.apply_mod, self.shade_mode, self.flip_x_normals) #exporter.export_meshcache(o, self.apply_mod)
                 
         #Generate Miproject
         exporter.generate_mip(aturan)
@@ -883,6 +878,7 @@ class ExportMiproj(Operator, ExportHelper):
         
         col = layout.column()
         col.label(text="Mesh")
+        col.prop(self, "flip_x_normals")
         col.prop(self, "shade_mode")
         col.prop(self, "apply_mod")
         col.prop(self, "backfaces")
@@ -909,6 +905,8 @@ class ExportMiproj(Operator, ExportHelper):
         col.label(text="Mr. Doon", icon='BLANK1')
         col.label(text="Aryl Animasi", icon='BLANK1')
         col.label(text="SweetTaky", icon='BLANK1')
+        col.label(text="Knightmare", icon='BLANK1')
+        col.label(text="ForestWolf99", icon='BLANK1')
         col.label(text="Tcalya", icon='BLANK1')
         col.label(text="Raffsimation", icon='BLANK1')
         col.label(text="Pebry", icon='BLANK1')
@@ -925,7 +923,7 @@ class EXTOMI_OT_open_trphb_page(Operator):
     
     def execute(self, context):
         import webbrowser
-        webbrowser.open("https://www.youtube.com/c/TRPHBAnimation")  # ganti URL-nya
+        webbrowser.open("https://www.youtube.com/c/TRPHBAnimation")
         return {'FINISHED'}
     
 class EXTOMI_OT_open_github(Operator):
@@ -934,7 +932,7 @@ class EXTOMI_OT_open_github(Operator):
     
     def execute(self, context):
         import webbrowser
-        webbrowser.open("https://github.com/Roni-Raihan/Blender-export-to-Miproject")  # ganti URL-nya
+        webbrowser.open("https://github.com/Roni-Raihan/Blender-export-to-Miproject")
         return {'FINISHED'}
 
 #-------------------------------------------------------------  
